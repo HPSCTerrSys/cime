@@ -321,21 +321,21 @@ def _create_component_modelio_namelists(case, files):
 
             inst_string = ""
             inst_index = 1
+            # set default values
+            for entry in entries:
+                nmlgen.add_default(entry)
+            # overwrite defaults
+            moddiri = case.get_value('EXEROOT') + "/" + model
+            nmlgen.set_value('diri', moddiri)
+
+            moddiro = case.get_value('RUNDIR')
+            nmlgen.set_value('diro', moddiro)
+
             while inst_index <= inst_count:
+
                 # determine instance string
                 if inst_count > 1:
                     inst_string = '_{:04d}'.format(inst_index)
-
-                # set default values
-                for entry in entries:
-                    nmlgen.add_default(entry)
-
-                # overwrite defaults
-                moddiri = case.get_value('EXEROOT') + "/" + model
-                nmlgen.set_value('diri', moddiri)
-
-                moddiro = case.get_value('RUNDIR')
-                nmlgen.set_value('diro', moddiro)
 
                 logfile = model + inst_string + ".log." + str(lid)
                 nmlgen.set_value('logfile', logfile)
