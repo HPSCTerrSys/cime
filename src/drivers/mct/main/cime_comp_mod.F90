@@ -40,6 +40,9 @@ module cime_comp_mod
   use mct_mod            ! mct_ wrappers for mct lib
   use perf_mod
   use ESMF
+#if defined(USE_OASIS)
+  use mod_oasis
+#endif
 
   !----------------------------------------------------------------------------
   ! component model interfaces (init, run, final methods)
@@ -177,7 +180,9 @@ module cime_comp_mod
 
   implicit none
 
-  !private
+#ifndef USE_PDAF
+  private
+#endif
 
   public cime_pre_init1, cime_pre_init2, cime_init, cime_run, cime_final
   public timing_dir, mpicom_GLOID
@@ -580,7 +585,11 @@ contains
   !*******************************************************************************
   !===============================================================================
 
+#ifdef USE_PDAF
   subroutine cime_pre_init1(esmf_log_option, pdaf_comm, pdaf_id, pdaf_max)
+#else
+  subroutine cime_pre_init1(esmf_log_option)
+#endif
     use shr_pio_mod, only : shr_pio_init1, shr_pio_init2
     use seq_comm_mct, only: num_inst_driver
     !----------------------------------------------------------
@@ -588,9 +597,11 @@ contains
     !----------------------------------------------------------
 
     character(CS), intent(out) :: esmf_log_option    ! For esmf_logfile_kind
+#ifdef USE_PDAF
     integer, optional, intent(in) :: pdaf_comm
     integer, optional, intent(in) :: pdaf_id
     integer, optional, intent(in) :: pdaf_max
+#endif
 
     integer, dimension(num_inst_total) :: comp_id, comp_comm, comp_comm_iam
     logical :: comp_iamin(num_inst_total)
@@ -598,25 +609,48 @@ contains
     integer :: it
     integer :: driver_id
     integer :: driver_comm
+#if defined(USE_OASIS)
+    integer :: oas_comp_id
+#endif
 
+#ifndef USE_PDAF
+    call mpi_init(ierr)
+    call shr_mpi_chkerr(ierr,subname//' mpi_init')
+#endif
+
+#if defined(USE_OASIS)
+    call oasis_init_comp  (oas_comp_id, 'eCLM', ierr)
+    if (ierr /= 0) then
+      call oasis_abort(oas_comp_id, 'cime_pre_init1', 'oasis_init_comp error')
+    end if
+    call oasis_get_localcomm(global_comm, ierr)
+    if (ierr /= 0) then
+      call oasis_abort(oas_comp_id, 'cime_pre_init1', 'oasis_get_localcomm error')
+    end if
+#else
+#ifdef USE_PDAF
     if (present(pdaf_comm)) then
       global_comm = pdaf_comm
-      !write(*,*) "PDAF_COMM present"
     else
-    ! call mpi_init(ierr)
-    ! call shr_mpi_chkerr(ierr,subname//' mpi_init')
       call mpi_comm_dup(MPI_COMM_WORLD, global_comm, ierr)
       call shr_mpi_chkerr(ierr,subname//' mpi_comm_dup')
     end if
+#else
+    call mpi_comm_dup(MPI_COMM_WORLD, global_comm, ierr)
+    call shr_mpi_chkerr(ierr,subname//' mpi_comm_dup')
+#endif
+#endif
+
     comp_comm = MPI_COMM_NULL
     time_brun = mpi_wtime()
 
     !--- Initialize multiple driver instances, if requested ---
+#ifdef USE_PDAF
     call cime_cpl_init(global_comm, driver_comm, num_inst_driver, driver_id, &
                        pdaf_id, pdaf_max)
-
-    !write(*,*) "after cime_cpl_init", global_comm, driver_comm, &
-    !                                  pdaf_id, pdaf_max
+#else
+    call cime_cpl_init(global_comm, driver_comm, num_inst_driver, driver_id)
+#endif
 
     call shr_pio_init1(num_inst_total,NLFileName, driver_comm)
     !
@@ -628,9 +662,11 @@ contains
     if (num_inst_driver > 1) then
        call seq_comm_init(global_comm, driver_comm, NLFileName, drv_comm_ID=driver_id)
        write(cpl_inst_tag,'("_",i4.4)') driver_id
+#ifdef USE_PDAF
     else if (present(pdaf_id) .and. present(pdaf_max)) then
        call seq_comm_init(global_comm, driver_comm, NLFileName, &
                           pdaf_id=pdaf_id, pdaf_max=pdaf_max)
+#endif
     else
        call seq_comm_init(global_comm, driver_comm, NLFileName)
        cpl_inst_tag = ''
@@ -4149,6 +4185,10 @@ contains
             mpicom=mpicom_GLOID)
     endif
 
+#if defined(USE_OASIS)
+    call oasis_terminate (ierr)
+    call shr_mpi_chkerr(ierr,subname//' oasis_terminate')
+#endif
     call t_finalizef()
 
   end subroutine cime_final
@@ -4219,8 +4259,12 @@ contains
     endif
   end subroutine cime_comp_barriers
 
+#ifdef USE_PDAF
   subroutine cime_cpl_init(comm_in, comm_out, num_inst_driver, id, &
                            pdaf_id, pdaf_max)
+#else
+  subroutine cime_cpl_init(comm_in, comm_out, num_inst_driver, id)
+#endif
     !-----------------------------------------------------------------------
     !
     ! Initialize multiple coupler instances, if requested
@@ -4233,8 +4277,9 @@ contains
     integer , intent(out) :: comm_out
     integer , intent(out)   :: num_inst_driver
     integer , intent(out)   :: id      ! instance ID, starts from 1
+#ifdef USE_PDAF
     integer , intent(in), optional :: pdaf_id, pdaf_max
-
+#endif
     !
     ! Local variables
     !
@@ -4247,7 +4292,6 @@ contains
     call shr_mpi_commrank(comm_in, mype  , ' cime_cpl_init')
     call shr_mpi_commsize(comm_in, numpes, ' cime_cpl_init')
 
-    !write(*,*) "start of cime_cpl_init", comm_in, mype, numpes
     num_inst_driver = 1
     id    = 0
 
@@ -4277,11 +4321,14 @@ contains
             ' : Total PE number must be a multiple of coupler instance number')
     end if
 
-    !write(*,*) "just before split", comm_in, pdaf_id, mype, numpes, comm_out
+#ifdef USE_PDAF
     if (pdaf_max > 1) then
        call mpi_comm_split(comm_in, pdaf_id, 0, comm_out, ierr)
        call shr_mpi_chkerr(ierr,subname//' mpi_comm_split')
     else if (num_inst_driver == 1) then
+#else
+    if (num_inst_driver == 1) then
+#endif
        call mpi_comm_dup(comm_in, comm_out, ierr)
        call shr_mpi_chkerr(ierr,subname//' mpi_comm_dup')
     else
