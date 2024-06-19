@@ -601,7 +601,6 @@ contains
 
     if (present(pdaf_comm)) then
       global_comm = pdaf_comm
-      !write(*,*) "PDAF_COMM present"
     else
     ! call mpi_init(ierr)
     ! call shr_mpi_chkerr(ierr,subname//' mpi_init')
@@ -614,9 +613,6 @@ contains
     !--- Initialize multiple driver instances, if requested ---
     call cime_cpl_init(global_comm, driver_comm, num_inst_driver, driver_id, &
                        pdaf_id, pdaf_max)
-
-    !write(*,*) "after cime_cpl_init", global_comm, driver_comm, &
-    !                                  pdaf_id, pdaf_max
 
     call shr_pio_init1(num_inst_total,NLFileName, driver_comm)
     !
@@ -4247,7 +4243,6 @@ contains
     call shr_mpi_commrank(comm_in, mype  , ' cime_cpl_init')
     call shr_mpi_commsize(comm_in, numpes, ' cime_cpl_init')
 
-    !write(*,*) "start of cime_cpl_init", comm_in, mype, numpes
     num_inst_driver = 1
     id    = 0
 
@@ -4277,7 +4272,6 @@ contains
             ' : Total PE number must be a multiple of coupler instance number')
     end if
 
-    !write(*,*) "just before split", comm_in, pdaf_id, mype, numpes, comm_out
     if (pdaf_max > 1) then
        call mpi_comm_split(comm_in, pdaf_id, 0, comm_out, ierr)
        call shr_mpi_chkerr(ierr,subname//' mpi_comm_split')
