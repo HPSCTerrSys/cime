@@ -602,8 +602,6 @@ contains
     if (present(pdaf_comm)) then
       global_comm = pdaf_comm
     else
-    ! call mpi_init(ierr)
-    ! call shr_mpi_chkerr(ierr,subname//' mpi_init')
       call mpi_comm_dup(MPI_COMM_WORLD, global_comm, ierr)
       call shr_mpi_chkerr(ierr,subname//' mpi_comm_dup')
     end if
