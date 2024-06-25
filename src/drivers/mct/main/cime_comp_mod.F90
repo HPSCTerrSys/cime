@@ -2215,6 +2215,9 @@ contains
         ' missing ntsteps input that is needed for TSMP-PDAF')
     end if
 
+    ! Explicitly set `counter` to zero before loop
+    counter = 0
+
     do while ( .not. stop_alarm)
 
        call t_startf('CPL:RUN_LOOP', hashint(1))
